@@ -19,6 +19,7 @@ Server Side code for ClusterCreate written by : Siddarth Karki, Karan Panjabi
 using namespace std;
 
 //structure definitions
+
 typedef struct client_info{
   char ipAddr[25];
   int  port;
@@ -46,12 +47,36 @@ typedef struct params_server_work{
 
 
 //function declarations
-void *connection_handler(void *);
+
+void get_pending_files(vector<string> *);
+void send_file(string , client_info&);
+char* concatenate(char* , char*);
+client_info* CreateClient(char*, int , int , int);
 void print_client_details(map<int, client_info>);
-void start_server(map<int, client_info> *);
+void *connection_handler(void *);
+void *start_server(void *);
+void *distribute_work(void* params);
+
 
 //function definitions
-void send_file(string pathstr, client_info& client) {
+
+void get_pending_files(vector<string> *pending_files){
+    DIR *directory;
+    struct dirent *current;
+    directory = opendir("../so_files/");
+    if(directory){
+      while((current = readdir(directory))!=NULL){
+        string s(current->d_name);
+        if(s.compare(s.length()-3, 3, ".so") == 0)
+          pending_files->push_back(current->d_name);
+      }
+    }
+    else{
+      printf("The .so file directory doesn't exist!\n");
+    }
+}
+
+void send_file(string pathstr, client_info& client){
     char* path = (char*)malloc(sizeof(char)*pathstr.length());
     strcpy(path, pathstr.c_str());
     char buffer[BUFFER_LEN];
@@ -129,12 +154,12 @@ void *connection_handler(void *socket_desc){
        pending_files->push_back((*work_table)[key]);
        work_table->erase(key);
        client_table->erase(key);
-       retrurn NULL;
+       return NULL;
      }
      send_file((string("../so_files/")+(*work_table)[key]), (*client_table)[key] );
      //recieve file .....
      read_size = recv(sock , client_message , 2000 , 0);
-     if((strcmp(client_message,"complete123")!=0 || read_size==0 || read_size=-1)){ //the files hasn't been sent properly back to server
+     if((strcmp(client_message,"complete123")!=0 || read_size==0 || read_size==-1)){ //the files hasn't been sent properly back to server
          printf("Output file not collected properly\n");
          pending_files->push_back((*work_table)[key]);
          work_table->erase(key);
@@ -150,59 +175,35 @@ void *connection_handler(void *socket_desc){
      }
    }
  }
-       //   while( (read_size = recv(sock , client_message , 2000 , 0)) > 0 ){
-       //     write(sock , client_message , strlen(client_message));
-       // }
-       //
-       // if(read_size == 0){
-       //   printf("Client Disconnected\n");
-       //   client_table->erase(key);
-       //   print_client_details(*client_table);
-       //   fflush(stdout);
-       // }
-       // else if(read_size == -1){
-       //   printf("Client Disconnected\n");
-       //   client_table->erase(key);
-       //   print_client_details(*client_table);
-       // }
-       // free(socket_desc);
-     // }
 
-void start_server(void *params){
+void* start_server(void *params){
   params_server_work *p = (params_server_work*)params;
   map<int, client_info> *client_table = p->client_table;
   map<int, string> *work_table = p->work_table;
   vector<string> *pending_files = p->pending_files;
   vector<string> *completed_files = p->completed_files;
-  //map<int, client_info> *CLIENT_TABLE = (map<int, client_info>*)malloc(sizeof(map<int, client_info>));
-  //CLIENT_TABLE = m;
 
   int socket_desc , new_socket , c , *new_sock,i;
 	struct sockaddr_in server , client;
 	char *message;
 
-	//Create socket
 	socket_desc = socket(AF_INET , SOCK_STREAM , 0);
 	if (socket_desc == -1){
 		printf("Sorry. The Socket could not be created!\n");
 	}
 
-	//Prepare the sockaddr_in structure
 	server.sin_family = AF_INET;
 	server.sin_addr.s_addr = INADDR_ANY;
 	server.sin_port = htons(PORT);
 
-	//Bind
-	if( bind(socket_desc,(struct sockaddr *)&server , sizeof(server)) < 0)
-	{
-		printf("Socket Binding Failed!\n");
-	}
-	 printf("Sever Socket has been binded to the port : %d\n",PORT);
+  if( bind(socket_desc,(struct sockaddr *)&server , sizeof(server)) < 0)
+   {
+  		printf("Socket Binding Failed!\n");
+	 }
+  printf("Sever Socket has been binded to the port : %d\n",PORT);
 
-	//Listen
 	listen(socket_desc , 3);
 
-	//Accept and incoming connection
 	puts("Waiting for incoming connections...");
 	c = sizeof(struct sockaddr_in);
   i = 0;
@@ -210,7 +211,7 @@ void start_server(void *params){
 	{
 		printf("Connection Accepted from: %s:%d (Client %d)\n", inet_ntoa(client.sin_addr), ntohs(client.sin_port), i);
 		pthread_t sniffer_thread;
-    params_connection_handler *p = (  params_connection_handler*)malloc(sizeof(params));
+    params_connection_handler *p = (params_connection_handler*)malloc(sizeof(params_connection_handler));
     p->key = i;
     p->sd = new_socket;
     p->client_table = client_table;
@@ -231,7 +232,7 @@ void start_server(void *params){
 	}
 }
 
-void distribute_work(void* params){
+void* distribute_work(void* params){
   params_server_work *p = (params_server_work*)params;
   map<int, client_info> *client_table = p->client_table;
   map<int, string> *work_table = p->work_table;
@@ -255,24 +256,21 @@ void distribute_work(void* params){
 /******************************************************* MAIN FUNCTION ************************************************/
 int main(int argc, char* argv[]){
   map<int, client_info> CLIENT_TABLE;
-  DIR *directory;
-  struct dirent *current;
-  vector<string> pending_files;
-  vector<string> completed_files;
+  vector<string> PENDING_FILES;
+  vector<string> COMPLETED_FILES;
   map<int, string> WORK_TABLE;
-  directory = opendir("../so_files/");
-  if(directory){
-    while((current = readdir(directory))!=NULL){
-      string s(current->d_name);
-      if(s.compare(s.length()-3, 3, ".so") == 0)
-        pending_files.push_back(current->d_name);
-    }
-  }
-  else{
-    printf("The .so file directory doesn't exist!\n");
-  }
 
-  //pass the WORK_TABLE, CLIENT_TABLE and pending_files vector to the required functions
-  // start_server(&CLIENT_TABLE);
+  params_server_work *params = (params_server_work *)malloc(sizeof(params_server_work *));
+  params->client_table = &CLIENT_TABLE;
+  params->work_table = &WORK_TABLE;
+  params->pending_files = &PENDING_FILES;
+  params->completed_files = &COMPLETED_FILES;
+
+  get_pending_files(&PENDING_FILES);
+
+  //create two threads
+  //start distrbute work thread after a delay of 5s just for a good demo
+
+
   return 0;
 }
