@@ -17,7 +17,6 @@ Server Side code for ClusterCreate written by : Siddarth Karki, Karan Panjabi
 #define BUFFER_LEN 1024
 
 using namespace std;
-
 //structure definitions
 
 typedef struct client_info{
@@ -49,6 +48,7 @@ typedef struct params_server_work{
 //function declarations
 
 void get_pending_files(vector<string> *);
+void recv_file(string ,client_info&);
 void send_file(string , client_info&);
 char* concatenate(char* , char*);
 client_info* CreateClient(char*, int , int , int);
@@ -67,13 +67,35 @@ void get_pending_files(vector<string> *pending_files){
     if(directory){
       while((current = readdir(directory))!=NULL){
         string s(current->d_name);
-        if(s.compare(s.length()-3, 3, ".so") == 0)
+        if(s.length()>3 && (s.compare(s.length()-3, 3, ".so") == 0) )
           pending_files->push_back(current->d_name);
       }
     }
     else{
       printf("The .so file directory doesn't exist!\n");
     }
+}
+
+void recv_file(string pathstr ,client_info& client){
+  char* path = (char*)malloc(sizeof(char)*pathstr.length());
+  strcpy(path, pathstr.c_str());
+	FILE *fp = fopen(path, "w");
+	// read the filesize first
+	int fsize = -1;
+	read(client.sock_desc, &fsize, sizeof(int));
+
+	char read_buf[BUFFER_LEN];
+	for (int i = 0; i < fsize / BUFFER_LEN; i++){
+		int read_bytes = read(client.sock_desc, read_buf, BUFFER_LEN); // TODO: assert read_bytes as BUFFER_LEN
+		fwrite(read_buf, read_bytes, 1, fp);
+	}
+	if (fsize % BUFFER_LEN != 0){
+		int leftbytes = fsize - ftell(fp);
+		int read_bytes = read(client.sock_desc, read_buf, leftbytes); // TODO: assert read_bytes as leftbytes
+		fwrite(read_buf, read_bytes, 1, fp);
+	}
+
+	fclose(fp);
 }
 
 void send_file(string pathstr, client_info& client){
@@ -87,10 +109,11 @@ void send_file(string pathstr, client_info& client){
     int filesize = ftell(fp);
     fseek(fp, 0, SEEK_SET);
 
+    write(client.sock_desc, &filesize, sizeof(int));
+
     for (int i = 0; i < filesize / BUFFER_LEN; i++){
         fread(buffer, BUFFER_LEN, 1, fp);
         write(client.sock_desc, buffer, BUFFER_LEN);
-
     }
     if (filesize%BUFFER_LEN != 0){
         int leftbytes = filesize - ftell(fp);
@@ -142,12 +165,15 @@ void *connection_handler(void *socket_desc){
    int read_size;
    char *message , client_message[2000];
    while(1){
-     if(work_table->find(key)==work_table->end())
+     if(work_table->find(key)==work_table->end()){
+        printf("No work assigned to client %d as of yet, going to sleep!\n", key);
         pthread_cond_wait(&((*client_table)[key].cond1), &((*client_table)[key].lock));
+      }
      //this part is continued after the client recieves a signal from another thread when a  work is assigned.
-
      pthread_mutex_unlock(&((*client_table)[key].lock));
-     write(sock , "ping" , strlen("ping"));
+     printf("Client %d has been woken up!\n", key);
+     //sleep(1);
+     write(sock , "ping" , 5);
      read_size = recv(sock , client_message , 2000 , 0);
      if(read_size==0 || read_size== -1){
        printf("Client Disconnected\n");
@@ -156,10 +182,11 @@ void *connection_handler(void *socket_desc){
        client_table->erase(key);
        return NULL;
      }
+     write(sock , "file" , 5);
      send_file((string("../so_files/")+(*work_table)[key]), (*client_table)[key] );
-     //recieve file .....
+     recv_file( (string("../op_files/")+"op"+ (*work_table)[key].substr(0, (*work_table)[key].length()-3)+".txt"), (*client_table)[key]);
      read_size = recv(sock , client_message , 2000 , 0);
-     if((strcmp(client_message,"complete123")!=0 || read_size==0 || read_size==-1)){ //the files hasn't been sent properly back to server
+     if((strcmp(client_message,"complete")!=0 || read_size==0 || read_size==-1)){ //the files hasn't been sent properly back to server
          printf("Output file not collected properly\n");
          pending_files->push_back((*work_table)[key]);
          work_table->erase(key);
@@ -171,6 +198,7 @@ void *connection_handler(void *socket_desc){
      else{
        printf("Output file collected succesfully from Client %d!\n", key);
        completed_files->push_back((*work_table)[key]);
+       (*client_table)[key].busy = 0;
        work_table->erase(key);
      }
    }
@@ -196,19 +224,17 @@ void* start_server(void *params){
 	server.sin_addr.s_addr = INADDR_ANY;
 	server.sin_port = htons(PORT);
 
-  if( bind(socket_desc,(struct sockaddr *)&server , sizeof(server)) < 0)
-   {
+  if( bind(socket_desc,(struct sockaddr *)&server , sizeof(server)) < 0){
   		printf("Socket Binding Failed!\n");
 	 }
   printf("Sever Socket has been binded to the port : %d\n",PORT);
 
 	listen(socket_desc , 3);
 
-	puts("Waiting for incoming connections...");
+	puts("Waiting for incoming connections...\n");
 	c = sizeof(struct sockaddr_in);
   i = 0;
-	while( (new_socket = accept(socket_desc, (struct sockaddr *)&client, (socklen_t*)&c)) )
-	{
+	while( (new_socket = accept(socket_desc, (struct sockaddr *)&client, (socklen_t*)&c)) ){
 		printf("Connection Accepted from: %s:%d (Client %d)\n", inet_ntoa(client.sin_addr), ntohs(client.sin_port), i);
 		pthread_t sniffer_thread;
     params_connection_handler *p = (params_connection_handler*)malloc(sizeof(params_connection_handler));
@@ -238,29 +264,36 @@ void* distribute_work(void* params){
   map<int, string> *work_table = p->work_table;
   vector<string> *pending_files = p->pending_files;
   vector<string> *completed_files = p->completed_files;
-  //you now have p->client_table, p->work_table, p->pending_files (two dicts and one vector respectively)
+
   int file_count = pending_files->size();
-  while( completed_files->size()!=file_count ){ // till all the results of the given so files aren't accumilated
+  start:
+  while( completed_files->size() < file_count ){ // till all the results of the given so files aren't accumilated
     for(auto x: *pending_files){ // iterate through the pending files list
       for(auto y: *client_table){ //get available client for the pending file by iterating through the client table and checking if a given client is busy
-        if(!(y.second.busy)){ //if client is free assign pending file to it
+        if(!(y.second.busy) && x.length() > 0){ //if client is free assign pending file to it
           work_table->insert(make_pair(y.first, x));
+          printf("Work has been assigned to client %d : %s\n", y.first, x.c_str());
+          (*client_table)[y.first].busy = 1; //mark client as busy
           remove(pending_files->begin(), pending_files->end(), x);
-          pthread_cond_signal(&(y.second.cond1));
+          //sleep(1);
+          pthread_cond_signal(&((*client_table)[y.first].cond1));
+          goto start; // you are breaking because you hvae found a client to assign the work to and don't want to souble assign to other clients on the clirnt_table!
         } //endif
       } //end clienttable iteration
     } //end pending file iteration
   }// end while
-}//end of function
+  printf("All the give tasks in the so_files folder has been exeuted successfully!\n");
+}//end of functionc
 
 /******************************************************* MAIN FUNCTION ************************************************/
 int main(int argc, char* argv[]){
+  setbuf(stdout, NULL);
   map<int, client_info> CLIENT_TABLE;
   vector<string> PENDING_FILES;
   vector<string> COMPLETED_FILES;
   map<int, string> WORK_TABLE;
 
-  params_server_work *params = (params_server_work *)malloc(sizeof(params_server_work *));
+  params_server_work *params = (params_server_work *)malloc(sizeof(params_server_work));
   params->client_table = &CLIENT_TABLE;
   params->work_table = &WORK_TABLE;
   params->pending_files = &PENDING_FILES;
@@ -269,8 +302,18 @@ int main(int argc, char* argv[]){
   get_pending_files(&PENDING_FILES);
 
   //create two threads
-  //start distrbute work thread after a delay of 5s just for a good demo
+  //starting distrbute work thread after a delay of 5s just for a good demo
+  pthread_t server_thread;
+  pthread_t distribute_work_thread;
 
+  pthread_create(&server_thread, NULL, start_server, (void*)params);
+
+  sleep(15);
+
+  pthread_create(&distribute_work_thread, NULL, distribute_work, (void*)params);
+
+  pthread_join(distribute_work_thread, NULL);
+  pthread_join(server_thread, NULL);
 
   return 0;
 }
