@@ -12,7 +12,9 @@ Server Side code for ClusterCreate written by : Siddarth Karki, Karan Panjabi
 #include <map>
 #include <dirent.h>
 #include <vector>
+#include <set>
 #include <algorithm>
+#include <iostream>
 #define PORT 8080
 #define BUFFER_LEN 1024
 
@@ -29,7 +31,7 @@ typedef struct client_info{
 }client_info;
 
 typedef struct params_connection_handler{
-    int sd; //socket descriptor required for connecting to client. Don't disconnect
+    int sd; //socket descriptor required for connecting to client. Don't delete this (atleast as of now)
     int key;
     map<int, client_info> *client_table;
     map<int, string> *work_table;
@@ -42,6 +44,7 @@ typedef struct params_server_work{
     map<int, string> *work_table;
     vector<string> *pending_files;
     vector<string> *completed_files;
+    set<unsigned int> *priority_table;
 }params_server_work;
 
 
@@ -55,7 +58,7 @@ client_info* CreateClient(char*, int , int , int);
 void print_client_details(map<int, client_info>);
 void *connection_handler(void *);
 void *start_server(void *);
-void *distribute_work(void* params);
+void *distribute_work(void *);
 
 
 //function definitions
@@ -143,6 +146,7 @@ client_info* CreateClient(char* ipAddr, int port, int sock_desc, int busy){
   c->busy = busy;
   c->cond1 = PTHREAD_COND_INITIALIZER;
   c->lock = PTHREAD_MUTEX_INITIALIZER;
+  //c->rank = rank;
   return c;
 }
 
@@ -210,7 +214,7 @@ void* start_server(void *params){
   map<int, string> *work_table = p->work_table;
   vector<string> *pending_files = p->pending_files;
   vector<string> *completed_files = p->completed_files;
-
+  set<unsigned int> *priority_table = p->priority_table;
   int socket_desc , new_socket , c , *new_sock,i;
 	struct sockaddr_in server , client;
 	char *message;
@@ -234,9 +238,15 @@ void* start_server(void *params){
 	puts("Waiting for incoming connections...\n");
 	c = sizeof(struct sockaddr_in);
   i = 0;
+
 	while( (new_socket = accept(socket_desc, (struct sockaddr *)&client, (socklen_t*)&c)) ){
 		printf("Connection Accepted from: %s:%d (Client %d)\n", inet_ntoa(client.sin_addr), ntohs(client.sin_port), i);
-		pthread_t sniffer_thread;
+    // read(new_socket, spec, 5);
+    unsigned int spec;  //= (int*)malloc(sizeof(int));
+    read(new_socket, &spec, sizeof(int));
+    spec = spec<<7;
+    spec = spec | i;
+    pthread_t sniffer_thread;
     params_connection_handler *p = (params_connection_handler*)malloc(sizeof(params_connection_handler));
     p->key = i;
     p->sd = new_socket;
@@ -246,6 +256,7 @@ void* start_server(void *params){
     p->completed_files = completed_files;
     client_info *c = CreateClient(inet_ntoa(client.sin_addr), ntohs(client.sin_port), new_socket, 0);
     client_table->insert(pair<int, client_info> (i, *c));
+    priority_table->insert(spec);
     print_client_details(*client_table);
 
 		if( pthread_create( &sniffer_thread , NULL ,  connection_handler , (void*) p) < 0){
@@ -264,41 +275,45 @@ void* distribute_work(void* params){
   map<int, string> *work_table = p->work_table;
   vector<string> *pending_files = p->pending_files;
   vector<string> *completed_files = p->completed_files;
-
+  set<unsigned int> *priority_table = p->priority_table;
+  set<unsigned int>::reverse_iterator rit;
   int file_count = pending_files->size();
   start:
   while( completed_files->size() < file_count ){ // till all the results of the given so files aren't accumilated
     for(auto x: *pending_files){ // iterate through the pending files list
-      for(auto y: *client_table){ //get available client for the pending file by iterating through the client table and checking if a given client is busy
-        if(!(y.second.busy) && x.length() > 0){ //if client is free assign pending file to it
-          work_table->insert(make_pair(y.first, x));
-          printf("Work has been assigned to client %d : %s\n", y.first, x.c_str());
-          (*client_table)[y.first].busy = 1; //mark client as busy
+      for(rit = priority_table->rbegin(); rit!=priority_table->rend(); rit++){ //get available client for the pending file by iterating through the client table and checking if a given client is busy
+        int key = (*rit)&127; //last seven digits in binary rep is 1
+        if(!((*client_table)[key].busy) && x.length() > 0){ //if client is free assign pending file to it
+          work_table->insert(make_pair(key, x));
+          printf("Work has been assigned to client %d : %s\n", key, x.c_str());
+          (*client_table)[key].busy = 1; //mark client as busy
           remove(pending_files->begin(), pending_files->end(), x);
           //sleep(1);
-          pthread_cond_signal(&((*client_table)[y.first].cond1));
+          pthread_cond_signal(&((*client_table)[key].cond1));
           goto start; // you are breaking because you hvae found a client to assign the work to and don't want to souble assign to other clients on the clirnt_table!
         } //endif
       } //end clienttable iteration
     } //end pending file iteration
   }// end while
   printf("All the give tasks in the so_files folder has been exeuted successfully!\n");
-}//end of functionc
+}//end of function
 
 /******************************************************* MAIN FUNCTION ************************************************/
+
 int main(int argc, char* argv[]){
   setbuf(stdout, NULL);
   map<int, client_info> CLIENT_TABLE;
   vector<string> PENDING_FILES;
   vector<string> COMPLETED_FILES;
   map<int, string> WORK_TABLE;
-
+  set<unsigned int> PRIORITY_TABLE;
+  
   params_server_work *params = (params_server_work *)malloc(sizeof(params_server_work));
   params->client_table = &CLIENT_TABLE;
   params->work_table = &WORK_TABLE;
   params->pending_files = &PENDING_FILES;
   params->completed_files = &COMPLETED_FILES;
-
+  params->priority_table = &PRIORITY_TABLE;
   get_pending_files(&PENDING_FILES);
 
   //create two threads
@@ -308,7 +323,7 @@ int main(int argc, char* argv[]){
 
   pthread_create(&server_thread, NULL, start_server, (void*)params);
 
-  sleep(15);
+  sleep(5);
 
   pthread_create(&distribute_work_thread, NULL, distribute_work, (void*)params);
 

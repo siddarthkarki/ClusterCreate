@@ -11,12 +11,31 @@
 #include <iostream>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <fstream>
 
 #define PORT 8080
 #define BUFFER_LEN 1024
 
 using namespace std;
 
+int return_specs(){
+	const char *command = "lscpu | grep MHz > output.txt";
+	system(command);
+	fstream file;
+	string word;
+  char *spec = (char*)malloc(sizeof(char)*10);
+  file.open("output.txt");
+  int c = 0;
+  while (file >> word){
+		c++;
+    if(c==3){
+        	// displaying content
+        	strcpy(spec,word.c_str());
+		}
+	}
+	cout << spec << endl;
+	return atoi(spec);
+}
 void recv_file(int serv_sockfd, const char *path){
 	FILE *fp = fopen(path, "w");
 	// read the filesize first
@@ -91,7 +110,6 @@ int main(){
 	struct sockaddr_in clientAddr;
 	char buffer[BUFFER_LEN];
 	clientSocket = socket(AF_INET, SOCK_STREAM, 0);
-
 	if (clientSocket < 0){
 		printf("[-]Error in connection.\n");
 		exit(1);
@@ -109,7 +127,10 @@ int main(){
 		exit(1);
 	}
 	printf("[+]Connected to Server.\n");
-
+	int spec;
+	spec = return_specs();
+	write(clientSocket, &spec, sizeof(int));
+	cout << "specs: " << spec << endl;// send it to the server here!
 	while (1){
 		printf("Waiting for tasks from server....\n");
 		read(clientSocket, buffer, 5); // command size
