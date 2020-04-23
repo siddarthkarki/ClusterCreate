@@ -17,9 +17,12 @@ Server Side code for ClusterCreate written by : Siddarth Karki, Karan Panjabi
 #include <iostream>
 #define PORT 8080
 #define BUFFER_LEN 1024
+#define BACKUP_SERVERS 2
 
 using namespace std;
 //structure definitions
+
+struct sockaddr_in sockaddr_in;
 
 typedef struct client_info{
   char ipAddr[25];
@@ -45,6 +48,7 @@ typedef struct params_server_work{
     vector<string> *pending_files;
     vector<string> *completed_files;
     set<unsigned int> *priority_table;
+    vector<sockaddr_in> *next_servers;
 }params_server_work;
 
 
@@ -295,7 +299,7 @@ void* distribute_work(void* params){
       } //end clienttable iteration
     } //end pending file iteration
   }// end while
-  printf("All the give tasks in the so_files folder has been exeuted successfully!\n");
+  printf("All the give tasks in the so_files folder has been executed successfully!\n");
 }//end of function
 
 /******************************************************* MAIN FUNCTION ************************************************/
@@ -307,6 +311,7 @@ int main(int argc, char* argv[]){
   vector<string> COMPLETED_FILES;
   map<int, string> WORK_TABLE;
   set<unsigned int> PRIORITY_TABLE;
+  vector<sockaddr_in> NEXT_SERVERS;
   
   params_server_work *params = (params_server_work *)malloc(sizeof(params_server_work));
   params->client_table = &CLIENT_TABLE;
