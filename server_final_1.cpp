@@ -18,6 +18,7 @@ Server Side code for ClusterCreate written by : Siddarth Karki, Karan Panjabi
 #define PORT 8080
 #define BUFFER_LEN 1024
 #define BACKUP_SERVERS 2
+#define UDP_PORT 7000
 
 using namespace std;
 //structure definitions
@@ -212,9 +213,27 @@ void *connection_handler(void *socket_desc){
    }
  }
 
- void udp_update_broadcast(int flag){
+ void udp_update_broadcast(int flag, map<int, client_info> *client_table, vector<sockaddr_in> *next_servers){
    if(flag==1){
-     
+     int serverfd = socket(AF_INET, SOCK_DGRAM, 0);
+     sockaddr_in server_addr, client_addr;
+     if(serverfd<0){
+      printf("Server for UDP broadcast couldn't be created.\n");
+      return ;
+    }
+    memset(&server_addr,0,sizeof(server_addr));
+    memset(&client_addr,0,sizeof(client_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_addr.s_addr = INADDR_ANY;
+    server_addr.sin_port = htons(UDP_PORT);
+    bind(serverfd, (const struct sockaddr *)&server_addr, sizeof(server_addr));
+    for(auto x: *(client_table)){
+          client_addr.sin_family = AF_INET;
+          client_addr.sin_port = htons(x.second.port);
+          inet_aton(x.second.ipAddr, &client_addr.sin_addr);
+          sendto(serverfd, (void*)next_servers, sizeof(next_servers), MSG_CONFIRM , (const struct sockaddr *)&client_addr, sizeof(client_addr));
+    }
+    close(serverfd);
    }
  }
 
@@ -259,22 +278,22 @@ void* start_server(void *params){
     spec = spec<<7;
     spec = spec | i;
     pthread_t sniffer_thread;
-    params_connection_handler *p = (params_connection_handler*)malloc(sizeof(params_connection_handler));
-    p->key = i;
-    p->sd = new_socket;
-    p->client_table = client_table;
-    p->work_table = work_table;
-    p->pending_files  = pending_files;
-    p->completed_files = completed_files;
+    params_connection_handler *pc = (params_connection_handler*)malloc(sizeof(params_connection_handler));
+    pc->key = i;
+    pc->sd = new_socket;
+    pc->client_table = client_table;
+    pc->work_table = work_table;
+    pc->pending_files  = pending_files;
+    pc->completed_files = completed_files;
     client_info *c = CreateClient(inet_ntoa(client.sin_addr), ntohs(client.sin_port), new_socket, 0);
     client_table->insert(pair<int, client_info> (i, *c));
     priority_table->insert(spec);
     print_client_details(*client_table);
     if(next_servers->size() < BACKUP_SERVERS){
       next_servers->push_back(client);
-      udp_update_broadcast(1);
+      udp_update_broadcast(1, client_table, next_servers);
     }
-		if( pthread_create( &sniffer_thread , NULL ,  connection_handler , (void*) p) < 0){
+		if( pthread_create( &sniffer_thread , NULL ,  connection_handler , (void*) pc) < 0){
 			perror("could not create thread");
 		}
     i++;
