@@ -22,7 +22,7 @@ Server Side code for ClusterCreate written by : Siddarth Karki, Karan Panjabi
 using namespace std;
 //structure definitions
 
-struct sockaddr_in sockaddr_in;
+typedef struct sockaddr_in sockaddr_in;
 
 typedef struct client_info{
   char ipAddr[25];
@@ -212,6 +212,12 @@ void *connection_handler(void *socket_desc){
    }
  }
 
+ void udp_update_broadcast(int flag){
+   if(flag==1){
+     
+   }
+ }
+
 void* start_server(void *params){
   params_server_work *p = (params_server_work*)params;
   map<int, client_info> *client_table = p->client_table;
@@ -219,6 +225,8 @@ void* start_server(void *params){
   vector<string> *pending_files = p->pending_files;
   vector<string> *completed_files = p->completed_files;
   set<unsigned int> *priority_table = p->priority_table;
+  vector<sockaddr_in> *next_servers = p->next_servers;
+
   int socket_desc , new_socket , c , *new_sock,i;
 	struct sockaddr_in server , client;
 	char *message;
@@ -262,7 +270,10 @@ void* start_server(void *params){
     client_table->insert(pair<int, client_info> (i, *c));
     priority_table->insert(spec);
     print_client_details(*client_table);
-
+    if(next_servers->size() < BACKUP_SERVERS){
+      next_servers->push_back(client);
+      udp_update_broadcast(1);
+    }
 		if( pthread_create( &sniffer_thread , NULL ,  connection_handler , (void*) p) < 0){
 			perror("could not create thread");
 		}
@@ -312,13 +323,14 @@ int main(int argc, char* argv[]){
   map<int, string> WORK_TABLE;
   set<unsigned int> PRIORITY_TABLE;
   vector<sockaddr_in> NEXT_SERVERS;
-  
+
   params_server_work *params = (params_server_work *)malloc(sizeof(params_server_work));
   params->client_table = &CLIENT_TABLE;
   params->work_table = &WORK_TABLE;
   params->pending_files = &PENDING_FILES;
   params->completed_files = &COMPLETED_FILES;
   params->priority_table = &PRIORITY_TABLE;
+  params->next_servers = &NEXT_SERVERS;
   get_pending_files(&PENDING_FILES);
 
   //create two threads
