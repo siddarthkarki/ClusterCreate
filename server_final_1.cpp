@@ -41,6 +41,8 @@ typedef struct params_connection_handler{
     map<int, string> *work_table;
     vector<string> *pending_files;
     vector<string> *completed_files;
+    map<int, client_info> *next_servers;
+    int replicate;
 }params_connection_handler;
 
 typedef struct params_server_work{
@@ -49,7 +51,7 @@ typedef struct params_server_work{
     vector<string> *pending_files;
     vector<string> *completed_files;
     set<unsigned int> *priority_table;
-    vector<sockaddr_in> *next_servers;
+    map<int, client_info> *next_servers;
 }params_server_work;
 
 
@@ -171,8 +173,16 @@ void *connection_handler(void *socket_desc){
    vector<string> *completed_files = p->completed_files;
    int sock = p->sd;
    int key = p->key;
+   int replicate = p->replicate;
    int read_size;
    char *message , client_message[2000];
+
+   //this is the part where yo replicate the next_servers table and also the so files(if this client has replicate var set to true)
+   if(replicate){
+     write(sock, "file", 5);
+     write(sock, )
+   }
+
    while(1){
      if(work_table->find(key)==work_table->end()){
         printf("No work assigned to client %d as of yet, going to sleep!\n", key);
@@ -244,8 +254,7 @@ void* start_server(void *params){
   vector<string> *pending_files = p->pending_files;
   vector<string> *completed_files = p->completed_files;
   set<unsigned int> *priority_table = p->priority_table;
-  vector<sockaddr_in> *next_servers = p->next_servers;
-
+  map<int, client_info> *next_servers = p->next_servers;
   int socket_desc , new_socket , c , *new_sock,i;
 	struct sockaddr_in server , client;
 	char *message;
@@ -285,14 +294,17 @@ void* start_server(void *params){
     pc->work_table = work_table;
     pc->pending_files  = pending_files;
     pc->completed_files = completed_files;
+    pc->next_servers = next_servers;
+    pc->replicate = 0;
     client_info *c = CreateClient(inet_ntoa(client.sin_addr), ntohs(client.sin_port), new_socket, 0);
     client_table->insert(pair<int, client_info> (i, *c));
     priority_table->insert(spec);
     print_client_details(*client_table);
+
     if(next_servers->size() < BACKUP_SERVERS){
-      next_servers->push_back(client);
-      udp_update_broadcast(1, client_table, next_servers);
+      pc->replicate = 1;
     }
+
 		if( pthread_create( &sniffer_thread , NULL ,  connection_handler , (void*) pc) < 0){
 			perror("could not create thread");
 		}
@@ -341,7 +353,7 @@ int main(int argc, char* argv[]){
   vector<string> COMPLETED_FILES;
   map<int, string> WORK_TABLE;
   set<unsigned int> PRIORITY_TABLE;
-  vector<sockaddr_in> NEXT_SERVERS;
+  map<int, client_info> NEXT_SERVERS;
 
   params_server_work *params = (params_server_work *)malloc(sizeof(params_server_work));
   params->client_table = &CLIENT_TABLE;
