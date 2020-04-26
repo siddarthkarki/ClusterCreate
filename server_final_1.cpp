@@ -171,6 +171,7 @@ void *connection_handler(void *socket_desc){
    map<int, string> *work_table = p->work_table;
    vector<string> *pending_files = p->pending_files;
    vector<string> *completed_files = p->completed_files;
+   map<int, client_info> *next_servers = p->next_servers;
    int sock = p->sd;
    int key = p->key;
    int replicate = p->replicate;
@@ -180,7 +181,22 @@ void *connection_handler(void *socket_desc){
    //this is the part where yo replicate the next_servers table and also the so files(if this client has replicate var set to true)
    if(replicate){
      write(sock, "file", 5);
-     write(sock, )
+     vector<string> files;
+     get_pending_files(&files);
+     int file_nos = files.size();
+     write(sock, &file_nos, sizeof(int));
+     for(auto x: files){
+       send_file((string("../so_files/")+x), (*client_table)[key]);
+     }
+   }
+   //send next server list
+   write(sock,"nstb",5);
+   int ns_size = next_servers->size();
+   write(sock, &ns_size, sizeof(int));
+   for(auto x: *next_servers){
+    write(sock, &x.first, sizeof(int));
+    write(sock, &x.second.port, sizeof(int));
+    write(sock, &x.second.ipAddr, strlen(x.second.ipAddr));
    }
 
    while(1){
@@ -302,6 +318,8 @@ void* start_server(void *params){
     print_client_details(*client_table);
 
     if(next_servers->size() < BACKUP_SERVERS){
+      int size = next_servers->size(); //basically acts like the order of server take over!
+      next_servers->insert(pair<int, client_info> (size,*c));
       pc->replicate = 1;
     }
 
