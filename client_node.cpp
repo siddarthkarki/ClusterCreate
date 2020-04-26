@@ -109,13 +109,15 @@ int main(){
 	struct sockaddr_in serverAddr;
 	struct sockaddr_in clientAddr;
 	char buffer[BUFFER_LEN];
+
+	printf("This is the ClusterCreate Client programme.\n");
+	printf("Setting up connection with the server...\n");
 	clientSocket = socket(AF_INET, SOCK_STREAM, 0);
 	if (clientSocket < 0){
 		printf("[-]Error in connection.\n");
 		exit(1);
 	}
 	printf("[+]Client Socket is created.\n");
-
 	memset(&serverAddr, '\0', sizeof(serverAddr));
 	serverAddr.sin_family = AF_INET;
 	serverAddr.sin_port = htons(PORT);
@@ -127,10 +129,25 @@ int main(){
 		exit(1);
 	}
 	printf("[+]Connected to Server.\n");
+
 	int spec;
 	spec = return_specs();
 	write(clientSocket, &spec, sizeof(int));
-	cout << "specs: " << spec << endl;// send it to the server here!
+	// cout << "specs: " << spec << endl;// send it to the server here!
+	//new fault tolerance to be implmented where
+	//TODO : create a map<int, client_info> data structure with all the unecessary fields intialiazed with -1 (check if this will affect the code in anyways)
+
+	/*TODO : check if the recieved string is "file"
+					 if yes, then get ready to recieve files by accepting the number of files!
+					 			create a SO_FILES directory
+								recieve the files in the for loop for file nos of time in the SO_FILES directory
+					recieve number of clients in next_server Table
+					run a loop
+						accept the client priority
+						accept the PORT
+						accept the IpADDR (25 characters)
+	*/
+
 	while (1){
 		printf("Waiting for tasks from server....\n");
 		read(clientSocket, buffer, 5); // command size
