@@ -186,9 +186,12 @@ int main(){
 	for(int i = 0; i<client_nos; i++){
 		client_info c;
 		int order;
+    int strlength;
 		read(clientSocket, &order, sizeof(int));
 		read(clientSocket, &(c.port), sizeof(int));
-		read(clientSocket, c.ipAddr, 25);
+    read(clientSocket, &strlength, sizeof(int));
+    read(clientSocket, c.ipAddr, strlength+1);
+    c.ipAddr[strlength] = '\0';
 		next_servers.insert(pair<int, client_info> (order, c));
 	}
 	printf("Backups Server table updated.\n");

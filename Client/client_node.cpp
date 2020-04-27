@@ -48,44 +48,62 @@ int return_specs(){
 	cout << spec << endl;
 	return atoi(spec);
 }
-void recv_file(int serv_sockfd, const char *path){
+
+int recv_file(int serv_sockfd, const char *path){
 	FILE *fp = fopen(path, "w");
 	// read the filesize first
 	int fsize = -1;
-	read(serv_sockfd, &fsize, sizeof(int));
+  int res = read(serv_sockfd, &fsize, sizeof(int));
+	if(res == 0 || res ==-1){
+    return -1;
+  }
 
 	char read_buf[BUFFER_LEN];
 	for (int i = 0; i < fsize / BUFFER_LEN; i++){
 		int read_bytes = read(serv_sockfd, read_buf, BUFFER_LEN); // TODO: assert read_bytes as BUFFER_LEN
+    if(read_bytes == 0 || read_bytes == -1){
+      return -1;
+    }
 		fwrite(read_buf, read_bytes, 1, fp);
 	}
 	if (fsize % BUFFER_LEN != 0){
 		int leftbytes = fsize - ftell(fp);
 		int read_bytes = read(serv_sockfd, read_buf, leftbytes); // TODO: assert read_bytes as leftbytes
-		fwrite(read_buf, read_bytes, 1, fp);
+    if(read_bytes == 0 || read_bytes == -1){
+      return -1;
+    }
+    fwrite(read_buf, read_bytes, 1, fp);
 	}
-
 	fclose(fp);
+  return 1;
 }
 
-void send_file(const char *path, int client_fd){
+int send_file(const char *path, int client_fd){
 	char buffer[BUFFER_LEN];
 	FILE *fp = fopen(path, "r");
 	fseek(fp, 0, SEEK_END);
 	int filesize = ftell(fp);
 	fseek(fp, 0, SEEK_SET);
-	write(client_fd, &filesize, sizeof(int));
-	for (int i = 0; i < filesize / BUFFER_LEN; i++){
+	int res = write(client_fd, &filesize, sizeof(int));
+  if(res==0||res==-1)
+    return -1;
+  for (int i = 0; i < filesize / BUFFER_LEN; i++){
 		fread(buffer, BUFFER_LEN, 1, fp);
-		write(client_fd, buffer, BUFFER_LEN);
-		// printf("%d\n", BUFFER_LEN);
+		res = write(client_fd, buffer, BUFFER_LEN);
+    if(res==0||res==-1)
+      return -1;
+    // printf("%d\n", BUFFER_LEN);
 	}
 	if (filesize % BUFFER_LEN != 0){
 		int leftbytes = filesize - ftell(fp);
 		fread(buffer, leftbytes, 1, fp);
-		write(client_fd, buffer, leftbytes);
-		// printf("%d\n", leftbytes);
+		res = write(client_fd, buffer, leftbytes);
+    if(res==0||res==-1)
+      return -1;
+    // printf("%d\n", leftbytes);
 	}
+  fclose(fp);
+  return 1;
 }
 
 // path needs to have a / to be absolute or relative\
@@ -186,9 +204,12 @@ int main(){
 	for(int i = 0; i<client_nos; i++){
 		client_info c;
 		int order;
+    int strlength;
 		read(clientSocket, &order, sizeof(int));
 		read(clientSocket, &(c.port), sizeof(int));
-		read(clientSocket, c.ipAddr, 25);
+    read(clientSocket, &strlength, sizeof(int));
+		read(clientSocket, c.ipAddr, strlength+1);
+    c.ipAddr[strlength] = '\0';
 		next_servers.insert(pair<int, client_info> (order, c));
 	}
 	printf("Backups Server table updated.\n");
@@ -198,20 +219,43 @@ int main(){
 	}
 	while (1){
 		printf("Waiting for tasks from server....\n");
-		read(clientSocket, buffer, 5); // command size
+		int t = read(clientSocket, buffer, 5); // command size
+    if(t==-1 || t==0){ //it actually return 0
+      printf("Connection to server lost!.\n");
+      // exit(1);
+      system("./server_final_1");
+    }
 		if (strcmp(buffer, "ping") == 0){
-			write(clientSocket, "pong", 5); // this will also write back 5 bytes, read 5 bytes to consume this
-		}
+			int res = write(clientSocket, "pong", 5); //TODO: FAILURE_POINT
+      // this will also write back 5 bytes, read 5 bytes to consume this
+      if(res==0||res==-1){
+        printf("Connection to server lost.\n");
+        exit(1);
+      }
+    }
 		else if (strcmp(buffer, "file") == 0){
-			printf("Receiving file\n");
-			recv_file(clientSocket, "client_node_recvfile.so");
-			printf("Received file\n");
+      int res;
+      printf("Receiving file\n");
+			res = recv_file(clientSocket, "client_node_recvfile.so"); //TODO: FAILURE_POINT
+      if(res==0||res==-1){
+        printf("Connection to server lost.\n");
+        exit(1);
+      }
+      printf("Received file\n");
 			exec_file("./client_node_recvfile.so", "client_recvfile_op.txt");
 			printf("Executed code\n");
 			printf("Sending Output Back to the server\n");
-			send_file("./client_recvfile_op.txt",clientSocket);
-			write(clientSocket, "complete", 9);
-		}
+			res = send_file("./client_recvfile_op.txt",clientSocket); //TODO: FAILURE_POINT
+      if(res==0||res==-1){
+        printf("Connection to server lost.\n");
+        exit(1);
+      }
+      res = write(clientSocket, "complete", 9); //TODO: FAILURE_POINT
+      if(res==0||res==-1){
+        printf("Connection to server lost.\n");
+        exit(1);
+      }
+    }
 		else if (strcmp(buffer, "exit") == 0){
 			close(clientSocket);
 			break;

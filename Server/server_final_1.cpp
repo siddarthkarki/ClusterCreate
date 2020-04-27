@@ -194,9 +194,12 @@ void *connection_handler(void *socket_desc){
    int ns_size = next_servers->size();
    write(sock, &ns_size, sizeof(int));
    for(auto x: *next_servers){
+    int strlength = strlen(x.second.ipAddr);
+    // cout << x.second.ipAddr << endl;
     write(sock, &x.first, sizeof(int));
     write(sock, &x.second.port, sizeof(int));
-    write(sock, &x.second.ipAddr, strlen(x.second.ipAddr));
+    write(sock, &strlength, sizeof(int));
+    write(sock, &x.second.ipAddr, strlength);
    }
 
    while(1){
