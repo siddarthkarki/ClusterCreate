@@ -1,0 +1,3 @@
+CPU MHz:             2181.356
+CPU max MHz:         3100.0000
+CPU min MHz:         400.0000

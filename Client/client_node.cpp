@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
+#include <string>
+#include <cstring>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -12,11 +13,22 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <fstream>
+#include <map>
+#include <assert.h>
 
 #define PORT 8080
 #define BUFFER_LEN 1024
 
 using namespace std;
+
+typedef struct client_info{
+  char ipAddr[25];
+  int  port;
+//   int  sock_desc;
+//   int busy;
+//   pthread_cond_t cond1;
+//   pthread_mutex_t lock;
+}client_info;
 
 int return_specs(){
 	const char *command = "lscpu | grep MHz > output.txt";
@@ -109,6 +121,7 @@ int main(){
 	struct sockaddr_in serverAddr;
 	struct sockaddr_in clientAddr;
 	char buffer[BUFFER_LEN];
+	map<int, client_info> next_servers;
 
 	printf("This is the ClusterCreate Client programme.\n");
 	printf("Setting up connection with the server...\n");
@@ -135,7 +148,7 @@ int main(){
 	write(clientSocket, &spec, sizeof(int));
 	// cout << "specs: " << spec << endl;// send it to the server here!
 	//new fault tolerance to be implmented where
-	//TODO : create a map<int, client_info> data structure with all the unecessary fields intialiazed with -1 (check if this will affect the code in anyways)
+	//(DONE)----TODO : create a map<int, client_info> data structure with all the unecessary fields intialiazed with -1 (check if this will affect the code in anyways)
 
 	/*TODO : check if the recieved string is "file"
 					 if yes, then get ready to recieve files by accepting the number of files!
@@ -147,7 +160,42 @@ int main(){
 						accept the PORT
 						accept the IpADDR (25 characters)
 	*/
+	int file_nos = 0;
+	char temp[25];
+	read(clientSocket, temp, 5);
+	if(strcmp(temp,"file") == 0){
+		printf("This client has been elected as a backup server!\n");
+		if(mkdir("so_files",0777)==-1){
+			printf("The so_files directory could not be created!.\n");
+		}
+		read(clientSocket, &file_nos, sizeof(int));
+		for(int i=0;i<file_nos;i++){
+			recv_file(clientSocket, ("./so_files/"+to_string(i)+".so").c_str() );
+		}
+		printf("State replication completed succesfully!.\n");
+    read(clientSocket, temp, 5); //this reads for the nstb command
+  }
 
+
+	assert(strcmp(temp, "nstb")==0);
+	printf("Accepting backupserver details from current server.\n");
+	int client_nos = 0;
+	read(clientSocket, &client_nos, sizeof(int));
+	client_info c;
+	int order;
+	for(int i = 0; i<client_nos; i++){
+		client_info c;
+		int order;
+		read(clientSocket, &order, sizeof(int));
+		read(clientSocket, &(c.port), sizeof(int));
+		read(clientSocket, c.ipAddr, 25);
+		next_servers.insert(pair<int, client_info> (order, c));
+	}
+	printf("Backups Server table updated.\n");
+	printf("Backup server details are as follows....\n");
+	for(auto x : next_servers){
+		printf("Backup server %d : %s:%d\n", x.first, x.second.ipAddr, x.second.port);
+	}
 	while (1){
 		printf("Waiting for tasks from server....\n");
 		read(clientSocket, buffer, 5); // command size

@@ -17,7 +17,7 @@ Server Side code for ClusterCreate written by : Siddarth Karki, Karan Panjabi
 #include <iostream>
 #define PORT 8080
 #define BUFFER_LEN 1024
-#define BACKUP_SERVERS 2
+#define BACKUP_SERVERS 1
 #define UDP_PORT 7000
 
 using namespace std;
@@ -389,7 +389,7 @@ int main(int argc, char* argv[]){
 
   pthread_create(&server_thread, NULL, start_server, (void*)params);
 
-  sleep(5);
+  sleep(500);
 
   pthread_create(&distribute_work_thread, NULL, distribute_work, (void*)params);
 
