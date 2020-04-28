@@ -24,10 +24,6 @@ using namespace std;
 typedef struct client_info{
   char ipAddr[25];
   int  port;
-//   int  sock_desc;
-//   int busy;
-//   pthread_cond_t cond1;
-//   pthread_mutex_t lock;
 }client_info;
 
 int return_specs(){
@@ -164,20 +160,6 @@ int main(){
 	int spec;
 	spec = return_specs();
 	write(clientSocket, &spec, sizeof(int));
-	// cout << "specs: " << spec << endl;// send it to the server here!
-	//new fault tolerance to be implmented where
-	//(DONE)----TODO : create a map<int, client_info> data structure with all the unecessary fields intialiazed with -1 (check if this will affect the code in anyways)
-
-	/*TODO : check if the recieved string is "file"
-					 if yes, then get ready to recieve files by accepting the number of files!
-					 			create a SO_FILES directory
-								recieve the files in the for loop for file nos of time in the SO_FILES directory
-					recieve number of clients in next_server Table
-					run a loop
-						accept the client priority
-						accept the PORT
-						accept the IpADDR (25 characters)
-	*/
 	int file_nos = 0;
 	char temp[25];
 	read(clientSocket, temp, 5);
@@ -222,8 +204,8 @@ int main(){
 		int t = read(clientSocket, buffer, 5); // command size
     if(t==-1 || t==0){ //it actually return 0
       printf("Connection to server lost!.\n");
-      // exit(1);
-      system("./server_final_1");
+      exit(1);
+      // system("./server_final_1");
     }
 		if (strcmp(buffer, "ping") == 0){
 			int res = write(clientSocket, "pong", 5); //TODO: FAILURE_POINT
