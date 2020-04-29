@@ -4,6 +4,7 @@ This file contains all the functions that is used in setting up server and clien
 and also handline server and client fault tolerance
 */
 // #include "ClusterCreate.h"
+//done
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
