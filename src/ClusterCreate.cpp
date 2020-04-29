@@ -686,6 +686,7 @@ void runclient(char* addr, int port){
             runserver(crd->port);
         }
         else{
+            sleep(1);
             crd = set_up_client(crd->serv_addr, crd->serv_port);
         }
     }
