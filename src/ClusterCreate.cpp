@@ -1,6 +1,6 @@
 /*
 This is the final code written for ClusterCreate, a framework for task distribution in Android devices
-This file contains all the functions that is used in setting up server and client
+This file contains all the functions that is used in setting up server and client 
 and also handline server and client fault tolerance
 */
 // #include "ClusterCreate.h"
